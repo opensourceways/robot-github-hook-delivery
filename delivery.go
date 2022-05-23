@@ -1,18 +1,19 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"sync"
 
 	"github.com/opensourceways/community-robot-lib/githubclient"
+	"github.com/opensourceways/community-robot-lib/kafka"
 	"github.com/opensourceways/community-robot-lib/mq"
 	"github.com/sirupsen/logrus"
 )
 
 type delivery struct {
-	wg   sync.WaitGroup
-	hmac func() []byte
+	wg    sync.WaitGroup
+	hmac  func() []byte
+	topic string
 }
 
 func (c *delivery) wait() {
@@ -25,8 +26,6 @@ func (c *delivery) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	fmt.Fprint(w, "Event received. Have a nice day.")
 
 	l := logrus.WithFields(
 		logrus.Fields{
@@ -43,9 +42,9 @@ func (c *delivery) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (c *delivery) publish(payload []byte, h http.Header, l *logrus.Entry) error {
 	header := map[string]string{
 		"content-type":      h.Get("content-type"),
-		"X-GitHub-Event":     h.Get("X-GitHub-Event"),
+		"X-GitHub-Event":    h.Get("X-GitHub-Event"),
 		"X-GitHub-Delivery": h.Get("X-GitHub-Delivery"),
-		"X-Hub-Signature":     h.Get("X-Hub-Signature"),
+		"X-Hub-Signature":   h.Get("X-Hub-Signature"),
 		"User-Agent":        "Robot-Github-Access",
 	}
 
@@ -58,10 +57,10 @@ func (c *delivery) publish(payload []byte, h http.Header, l *logrus.Entry) error
 	go func() {
 		defer c.wg.Done()
 
-		if err := mq.Publish("github-webhook", &msg); err != nil {
+		if err := kafka.Publish(c.topic, &msg); err != nil {
 			l.WithError(err).Error("failed to publish msg")
 		} else {
-			l.Info("publish message to github-webhook topic success")
+			l.Infof("publish message to %s topic success", c.topic)
 		}
 	}()
 

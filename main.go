@@ -2,12 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 
 	"github.com/opensourceways/community-robot-lib/config"
 	"github.com/opensourceways/community-robot-lib/interrupts"
+	"github.com/opensourceways/community-robot-lib/kafka"
 	"github.com/opensourceways/community-robot-lib/logrusutil"
 	"github.com/opensourceways/community-robot-lib/mq"
 	liboptions "github.com/opensourceways/community-robot-lib/options"
@@ -20,9 +22,14 @@ const component = "robot-github-hook-delivery"
 type options struct {
 	service        liboptions.ServiceOptions
 	hmacSecretFile string
+	topic          string
 }
 
 func (o *options) Validate() error {
+	if o.topic == "" {
+		return fmt.Errorf("please set topic")
+	}
+
 	return o.service.Validate()
 }
 
@@ -32,6 +39,7 @@ func gatherOptions(fs *flag.FlagSet, args ...string) options {
 	o.service.AddFlags(fs)
 
 	fs.StringVar(&o.hmacSecretFile, "hmac-secret-file", "/etc/webhook/hmac", "Path to the file containing the HMAC secret.")
+	fs.StringVar(&o.topic, "topic", "", "The topic to which github webhook messages need to be published ")
 
 	_ = fs.Parse(args)
 	return o
@@ -61,7 +69,7 @@ func main() {
 
 	getHmac := secretAgent.GetTokenGenerator(o.hmacSecretFile)
 
-	d := delivery{hmac: getHmac}
+	d := delivery{hmac: getHmac, topic: o.topic}
 
 	if err := initBroker(configAgent); err != nil {
 		logrus.WithError(err).Fatal("Error init broker.")
@@ -71,7 +79,7 @@ func main() {
 	interrupts.OnInterrupt(func() {
 		configAgent.Stop()
 
-		_ = mq.Disconnect()
+		_ = kafka.Disconnect()
 
 		d.wait()
 	})
@@ -100,9 +108,9 @@ func initBroker(agent config.ConfigAgent) error {
 		return err
 	}
 
-	err = mq.Init(
+	err = kafka.Init(
 		mq.Addresses(cfg.Config.Addresses...),
-		mq.TLSConfig(tlsConfig),
+		mq.SetTLSConfig(tlsConfig),
 		mq.Log(logrus.WithField("module", "broker")),
 	)
 
@@ -110,5 +118,5 @@ func initBroker(agent config.ConfigAgent) error {
 		return err
 	}
 
-	return mq.Connect()
+	return kafka.Connect()
 }

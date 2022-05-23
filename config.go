@@ -1,11 +1,11 @@
 package main
 
 import (
-	"github.com/opensourceways/community-robot-lib/config"
+	"github.com/opensourceways/community-robot-lib/mq"
 )
 
 type configuration struct {
-	Config config.MQConfig `json:"config" required:"true"`
+	Config mq.MQConfig `json:"config" required:"true"`
 }
 
 func (c *configuration) Validate() error {
